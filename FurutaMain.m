@@ -241,6 +241,20 @@ resetCount = -1;
 
 %% Second Part - Control
 
+% Save variables from prior stage
+W1_first = W1;
+W2_first = W2;
+W3_first = W3;
+
+CostHistory_first = CostHistory;
+%%
+% Gaussian weight initialization
+W1 = randn(Neurons(1),Neurons(2));%, ones(Neurons(1),1)];
+W2 = randn(Neurons(2),Neurons(3));%, ones(Neurons(2),1)];
+W3 = randn(Neurons(3),Neurons(4));%, ones(Neurons(3),1)];
+
+CostHistory = zeros(tSteps,maxep);
+%%
 while(~cFlag)
     % Restart algorithm, since it did not succesfully controlled the agent
     % in 300 continous episodes
@@ -264,7 +278,9 @@ while(~cFlag)
             %-- Pick an action --%
             q_temp = [];
             for i = 1:length(actions)
-                q_temp = [q_temp getX2(state,actions(i))*w];
+                NNinputs_temp = [state, actions(i)];
+                [StaAct_temp , ~, ~, ~, ~, ~]= Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
+                q_temp = [q_temp StaAct_temp];%getX2(state,actions(i))*w];
             end
 
             if (rand()>epsilon) % Choose action from epsilon-greedy policy
@@ -299,7 +315,9 @@ while(~cFlag)
             % Calculate qhat from the observation
             q_temp = [];
             for i = 1:length(actions)
-                q_temp = [q_temp getX2(obs, actions(i))*w];
+                NNinputs_temp = [obs, actions(i)];
+                [StaAct_temp , ~, ~, ~, ~, ~] = Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
+                q_temp = [q_temp StaAct_temp];
             end
             qhat_obs = max(q_temp);        
             %--------------------------------------------------------%
@@ -315,9 +333,20 @@ while(~cFlag)
             %-- Update weight parameters --%
             % deltaW = alpha*( r' + gamma*max(qhat(s',a',w)) - qhat(s,a,w) )*x(s,a)
             % ' means from the observed state
-
-            deltaW = alpha*( Rfunc(obs(1)) + gamma*qhat_obs - qhat + bonus )*getX2(state,actions(stateA));
-            w = w + deltaW';
+            StaAct_k = [state,actions(stateA)];
+            %StaAct_k1 = [obs,actions(stateB)];
+            [~, z_2, a_2, z_3, a_3, z_4] = Feedforward(StaAct_k, W1, W2, W3, ActFuncType);
+            %[Q_hat_k1, ~, ~, ~, ~, ~] = Feedforward(StaAct_k1, W1, W2, W3, ActFuncType);
+            
+            qest = Rfunc(obs(1)) + gamma*qhat_obs + bonus;
+            J = CostFunction(qest, qhat);
+            CostHistory(iter, episodes) = J;
+            
+            [dJdW3, dJdW2, dJdW1] = Backpropagation(StaAct_k, qest, qhat, z_4, a_3,  z_3, a_2, z_2, W3, W2, ActFuncType);
+            %   Updating Weights
+            W1 = W1 - lrate * dJdW1;
+            W2 = W2 - lrate * dJdW2;
+            W3 = W3 - lrate * dJdW3;            
             %--------------------------------------------------------%
 
             % Update State
@@ -351,7 +380,7 @@ while(~cFlag)
         end
 
     end % While Loop    
-    
+    cFlag = true;
 end % While Loop
 
 
@@ -408,7 +437,8 @@ axis([0 time/10 -2*pi-0.5 2*pi+0.5]);
 parameters = [300 100 750 500];
 simulate1Pend(parameters, simS);
 
-end % Reinforcement learning function
+end
+% Reinforcement learning function
 
 function x = getX1(state, action)
 % Features for linear Q-learning Part 1
