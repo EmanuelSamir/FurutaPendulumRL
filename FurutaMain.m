@@ -4,76 +4,74 @@ function FurutaMain
 
 clear all; close all; clc;
 
-%% Reach the upright position variables
-
-%-- Function Approximation --%
-lambda = 0.2;
-normalAngle = @(angle) abs(2*pi - abs(angle));
-w = zeros(length(getX1([0 0],1)),1); % Weight parameters for features
-alpha = 0.000001; % Step size for function approximation
+%% Reaching the upright position stage parameters
+lambda = 0.2;                                   % For state initialization
+normalAngle = @(angle) abs(2*pi - abs(angle));  % Normalization function 
 TLim = 9; % Torque
-actions = [-TLim 0 TLim]; % Only 3 options, Full blast one way, the other way, and off
-bestA = zeros(1000,1); % Large vector, so it is replaced in the first success
+actions = [-TLim 0 TLim];                       % Only 3 options, Full blast one way, the other way, and off
+bestA = zeros(1000,1);  % Large vector, so it is replaced in the first success
+angleRange = 0.1;           % Switch to second controller when q reaches the ball of radius angleRange
+rateRange = 0.5;          % Switch to second controller when qd reaches the ball of radius rateRange
 
-%-- Q-learning --%
-maxep = 5000;
-tSteps = 800; % Set number of iterations because there are undefined states
-gamma = 0.99; % Discount rate
+% -------- Function Approximation -------- %
+% alpha = 0.000001;                             % Step size for function approximation
+% w = zeros(length(getX1([0 0],1)),1); % Weight parameters for features
 % Rfunc = @(x,xdot)(-(abs(x)).^2 - (abs(xdot)).^2); % Reward function
-Rfunc = @(q, qdot) -((pi-abs(q)).^2 + 0.2*(abs(qdot).^2));
-prob = 0.5;
-epsilon = prob; % Probability of picking random action vs estimated best action
-epsilonDecay = 0.999;
-dt = 0.05; % Timestep of integration. Each substep lasts this long
-success = false;
+
+% -------- Q-learning -------- %
+maxep = 20000;           % Set max number of episodes
+tSteps = 800;           % Set max number of iterations because there are undefined states
+gamma = 0.99;           % Discount rate
+Rfunc = @(q, qdot) -((pi-abs(q)).^1 + 0.2*(abs(qdot).^3.5));  % Reward function
+prob = 0.8;             % Starting probability
+epsilon = prob;         % Probability of picking random action vs estimated best action
+epsilonDecay = 0.999;   % Decay after each episode
+dt = 0.05;              % Timestep of integration. Each substep lasts this long.
+success = false;        
 bonus = 0;
-episodes = 1;
 
-%% Neural Network for online Implementation 
-% Parameters 
-hLayers = 2;                     % Hidden Layers. If it varies. More weights must be added.
-InputSize = 3;
-OutputSize = 1;
-Neurons = [InputSize 30 30 OutputSize];         % Neurons per layers (input, hidden, output)
-ActFuncType = 1;             % Activation Function: 1: Sigmoid. 2: Lineal TODO: add more functions
-DataSize = 20;
-lrate = 0.0001;
+% -------- NN function approximation --------- % 
+hLayers = 2;                    % Hidden Layers. If it varies. More weights must be added.
+InputSize = 3;                  % Input size
+OutputSize = 1;                 % Output size
+Neurons = [InputSize 40 40 OutputSize];         % Neurons per layers (input, hidden1, hidden2, output)
+ActFuncType = 1;                % Activation Function: 1: Sigmoid. 2: Lineal. TODO: add more functions
+lrate = 0.00001;                 % Learning rate for NN
 
-if hLayers ~= length(Neurons) - 2
-    disp('hLayers is different than neurons defined');
-end
-
-% Initialization
 % Gaussian weight initialization
-W1 = randn(Neurons(1),Neurons(2));%, ones(Neurons(1),1)];
-W2 = randn(Neurons(2),Neurons(3));%, ones(Neurons(2),1)];
-W3 = randn(Neurons(3),Neurons(4));%, ones(Neurons(3),1)];
+W1 = randn(Neurons(1),Neurons(2));  % Weight for input to layer 1
+W2 = randn(Neurons(2),Neurons(3));  % Weight for layer 1 to layer 2
+W3 = randn(Neurons(3),Neurons(4));  % Weight for layer 2 to output
 
-CostHistory = zeros(tSteps,maxep);
+CostHistory = zeros(tSteps,maxep);  % To save cost for NN for each episode
+RewardHistory = zeros(tSteps,maxep);  % To save reward for trajectory for each episode
 
+FallOverCount = 1;
+HighRateCount = 0;
 
 %% First Part - Reach Upright Position
-
 for episodes = 1:maxep
     % Reset initial state
+    
     % [angle1 rate1]
     state = [ unifrnd(-lambda,lambda) 0 ];
     posInit = state;
-    % Reset simulation matrices
-    simS = [];
-    takenA = [];
     
-    for iter = 1:tSteps
-        
-        %-- Pick an action --%
-        q_temp = [];
+    % Reset simulation matrices
+    simS = zeros(length(state),tSteps);
+    takenA = zeros(1, tSteps);
+    
+    for iter = 1:tSteps    
+        % -------- Pick an action -------- %
+        q_v = zeros(1,length(actions));
         for i = 1:length(actions)
             NNinputs_temp = [state, actions(i)];
-             [StaAct_temp , ~, ~, ~, ~, ~]= Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
-            q_temp = [q_temp StaAct_temp]; %getX1(state,actions(i))*w];
+            [q_temp , ~, ~, ~, ~, ~]= Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
+            q_v(i) = q_temp;
         end
-        
-        if (rand()>epsilon) % Choose action from epsilon-greedy policy
+
+        % Choose action from epsilon-greedy policy
+        if (rand()>epsilon)     
            [qhat, stateA] = max(q_temp);
         else % Random action!
             qhat = max(q_temp);
@@ -81,7 +79,7 @@ for episodes = 1:maxep
         end
         
         T = actions(stateA);
-        takenA = [takenA actions(stateA)];
+        takenA(iter) = actions(stateA);
         %--------------------------------------------------------%
         
         %-- Observation --%
@@ -103,21 +101,21 @@ for episodes = 1:maxep
         %--------------------------------------------------------%
         
         % Calculate qhat from the observation
-        q_temp = [];
+        q_v = zeros(1,length(actions));
         for i = 1:length(actions)
             NNinputs_temp = [obs, actions(i)];
-            [StaAct_temp , ~, ~, ~, ~, ~] = Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
-            q_temp = [q_temp StaAct_temp];  %getX1(obs, actions(i))*w];
-        end
-        %[qhat_obs, stateB] = max(q_temp);    
+            [q_temp , ~, ~, ~, ~, ~] = Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
+            q_v(i) = q_temp;
+        end        
         qhat_obs = max(q_temp);    
         %--------------------------------------------------------%
         
-        % If the limit was reached epidose is defined as succesful
-        if ( (obs(1) > pi-0.01) && (obs(1) < pi+0.01)  ) && ( abs(obs(2))<0.05 )% If we've reached upright with no velocity (within some margin), end this episode
+        % If the limit was reached, episode is defined as succesful
+        if ( (obs(1) > pi - angleRange) && (obs(1) < pi + angleRange)  ) && ( abs(obs(2))<rateRange )
+            % If we've reached upright with no velocity (within some margin), end this episode
             success = true;
-            bonus = 100; % Give a bonus for getting there
-            
+            % Give a bonus for getting there
+            bonus = 200; 
             % Save the actions that led the agent to the objective
             % Only overwrite it if in this episode, less actions were
             % needed
@@ -130,41 +128,48 @@ for episodes = 1:maxep
             bonus = 0;
         end
         
-        %-- Update weight parameters --%
-        % deltaW = alpha*( r' + gamma*max(qhat(s',a',w)) - qhat(s,a,w) )*x(s,a)
-        % ' means from the observed state
+        % -------- Update weight parameters -------- %
+        % Recover best pair state action chosen
         StaAct_k = [state,actions(stateA)];
-        %StaAct_k1 = [obs,actions(stateB)];
-        [~, z_2, a_2, z_3, a_3, z_4] = Feedforward(StaAct_k, W1, W2, W3, ActFuncType);
-        %[Q_hat_k1, ~, ~, ~, ~, ~] = Feedforward(StaAct_k1, W1, W2, W3, ActFuncType);
-        
-        qest = Rfunc(obs(1),obs(2)) + gamma*qhat_obs + bonus;
-        J = CostFunction(qest, qhat);
-        CostHistory(iter, episodes) = J;
-        
+        % Recover insight parameters for the best pair
+        [~, z_2, a_2, z_3, a_3, z_4] = Feedforward(StaAct_k, W1, W2, W3, ActFuncType);  
+        % Save Reward
+        r = Rfunc(obs(1),obs(2));
+        RewardHistory(iter, episodes) = r;
+
+        % Using the observation and reward as an improved q
+        qest = r + gamma*qhat_obs + bonus;
+
+        % Using Backpropagation
         [dJdW3, dJdW2, dJdW1] = Backpropagation(StaAct_k, qest, qhat, z_4, a_3,  z_3, a_2, z_2, W3, W2, ActFuncType);
-        %deltaW = alpha*( Rfunc(obs(1),obs(2)) + gamma*qhat_obs - qhat + bonus )*getX1(state,actions(stateA));
+
         %   Updating Weights
         W1 = W1 - lrate * dJdW1;
         W2 = W2 - lrate * dJdW2;
         W3 = W3 - lrate * dJdW3;
-        %w = w + deltaW';
         %--------------------------------------------------------%
-        
+        % Save Cost
+        J = CostFunction(qest, qhat);
+        CostHistory(iter, episodes) = J;
+
         % Update State
         state = obs;
-        simS = [simS; state(1:2)];
-        
+        % simS = [simS; state(1:2)];
+        simS(1, iter) = state(1);
+        simS(2, iter) = state(2);
+
         % If the objective was reached
         if success
             % But the pendulum falls over
             if ( (state(1) > 3*pi/2) || (state(1) < pi/2)  )
+                FallOverCount = FallOverCount + 1;
                 break; % Stop
             end
         end
         
         % Stop if the pendulum starts spinning at a high rate
         if ( abs(state(2)) > 8 )
+            HighRateCount = HighRateCount +1;
             break;
         end
         
@@ -173,15 +178,17 @@ for episodes = 1:maxep
     end % For loop
     
     if success
-        disp(['Objective reached on episode n� ', int2str(episodes)]);
-        %disp('Continue...?');     
-        m=input('Do you want to continue, Y/N [Y]:','s');
-        if m=='N'
-            break
-        end
+        disp(['Objective reached on episode No. ', int2str(episodes)]);
+
+        %m=input('Do you want to continue, Y/N [Y]:','s');
+        %if m=='N'
+        %    break
+        %end
     else
-        disp(['Didn�t reach the objective on episode n� ', int2str(episodes)])
-        pause(0.00000001)% Pause needed for printing messages
+        if (mod(episodes,100) == 0)
+            disp(['Did not reach the objective on episode No.', int2str(episodes)])
+            pause(0.00000001)% Pause needed for printing messages
+        end
     end
     
     success = false;
@@ -197,6 +204,7 @@ end % for Loop
 % Number of actions threshold --%
 
 disp(['First stage concluded in ', int2str(episodes), ' episodes']);
+
 %% Take best Actions
 lastState = bestPosInit;
 simS = [];
@@ -221,11 +229,9 @@ for num = 1:length(bestA)
     
 end % Take Best actions
 
-%% Control variables
+%% Control parameters
 
 %-- Function Approximation --%
-w = zeros(length(getX2([0 0],1)),1); % Weight parameters for features
-alpha = 0.0005; % Step size for function approximation
 actions = [-0.5 0.5]; % Only 3 options, Full blast one way, the other way, and off
 
 %-- Q-learning --%
@@ -241,46 +247,55 @@ resetCount = -1;
 
 %% Second Part - Control
 
-% Save variables from prior stage
+% Save weights and History from prior stage
 W1_first = W1;
 W2_first = W2;
 W3_first = W3;
 
 CostHistory_first = CostHistory;
-%%
+RewardHistory_first = RewardHistory;
+
 % Gaussian weight initialization
 W1 = randn(Neurons(1),Neurons(2));%, ones(Neurons(1),1)];
 W2 = randn(Neurons(2),Neurons(3));%, ones(Neurons(2),1)];
 W3 = randn(Neurons(3),Neurons(4));%, ones(Neurons(3),1)];
 
-CostHistory = zeros(tSteps,maxep);
+
+CostHistory = zeros(tSteps,maxep);  % To save cost for NN for each episode
+RewardHistory = zeros(tSteps,maxep);  % To save reward for trajectory for each episode
+
+
 %%
+cFlag = false;
 while(~cFlag)
     % Restart algorithm, since it did not succesfully controlled the agent
     % in 300 continous episodes
     episodes = 1;
     breakCount = 0;
     stats = zeros(1,maxep);
-    w = zeros(length(getX2([0 0],1)),1);
     resetCount = resetCount + 1;
-    epsilon = 0.9;
+    epsilon = 0.3;
     
     while(episodes<maxep+1)
         % Reset initial state
         % [angle rate]
         state = lastState;
+
         % Reset simulation matrices
-        simS2 = [];
-        takenA = [];
+        % simS2 = [];
+        % takenA = [];
+
+        simS2 = zeros(length(state),tSteps);
+        takenA = zeros(1, tSteps);
+
 
         for iter = 1:tSteps
-
             %-- Pick an action --%
-            q_temp = [];
+            q_v = zeros(1,length(actions));
             for i = 1:length(actions)
                 NNinputs_temp = [state, actions(i)];
-                [StaAct_temp , ~, ~, ~, ~, ~]= Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
-                q_temp = [q_temp StaAct_temp];%getX2(state,actions(i))*w];
+                [q_temp , ~, ~, ~, ~, ~]= Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
+                q_v(i) = q_temp;
             end
 
             if (rand()>epsilon) % Choose action from epsilon-greedy policy
@@ -313,11 +328,11 @@ while(~cFlag)
             %--------------------------------------------------------%
 
             % Calculate qhat from the observation
-            q_temp = [];
+            q_v = zeros(1,length(actions));
             for i = 1:length(actions)
                 NNinputs_temp = [obs, actions(i)];
-                [StaAct_temp , ~, ~, ~, ~, ~] = Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
-                q_temp = [q_temp StaAct_temp];
+                [q_temp , ~, ~, ~, ~, ~] = Feedforward(NNinputs_temp, W1, W2, W3, ActFuncType);
+                q_v(i) = q_temp;
             end
             qhat_obs = max(q_temp);        
             %--------------------------------------------------------%
@@ -331,18 +346,19 @@ while(~cFlag)
             end
 
             %-- Update weight parameters --%
-            % deltaW = alpha*( r' + gamma*max(qhat(s',a',w)) - qhat(s,a,w) )*x(s,a)
-            % ' means from the observed state
             StaAct_k = [state,actions(stateA)];
-            %StaAct_k1 = [obs,actions(stateB)];
+
             [~, z_2, a_2, z_3, a_3, z_4] = Feedforward(StaAct_k, W1, W2, W3, ActFuncType);
-            %[Q_hat_k1, ~, ~, ~, ~, ~] = Feedforward(StaAct_k1, W1, W2, W3, ActFuncType);
-            
-            qest = Rfunc(obs(1)) + gamma*qhat_obs + bonus;
+
+            r = Rfunc(obs(1));
+            RewardHistory(iter, episodes) = r;
+            qest = r + gamma*qhat_obs + bonus;
+
             J = CostFunction(qest, qhat);
             CostHistory(iter, episodes) = J;
             
             [dJdW3, dJdW2, dJdW1] = Backpropagation(StaAct_k, qest, qhat, z_4, a_3,  z_3, a_2, z_2, W3, W2, ActFuncType);
+
             %   Updating Weights
             W1 = W1 - lrate * dJdW1;
             W2 = W2 - lrate * dJdW2;
@@ -350,10 +366,13 @@ while(~cFlag)
             %--------------------------------------------------------%
 
             % Update State
-            %delta = max(delta, abs(qhat_obs - qhat));
             state = obs;
-            simS2 = [simS2; state(1:2)];
-            takenA = [takenA actions(stateA)];
+
+            % simS2 = [simS2; state(1:2)];
+            simS2(1, iter) = state(1);
+            simS2(2, iter) = state(2);
+            takenA(iter) = actions(stateA);
+            % takenA = [takenA actions(stateA)];
 
             if ( (state(1) > 3*pi/2) || (state(1) < pi/2)  ) || ( abs(state(2)) > 8 )
                 break;
@@ -370,13 +389,13 @@ while(~cFlag)
             breakCount = 0;
         end
         
-        disp(['Episode n� ', int2str(episodes)])
+        disp(['Episode No.', int2str(episodes)])
         epsilon = epsilon*epsilonDecay; % Reduce exploration probability
         episodes = episodes + 1;
 
-        if breakCount >= 100
+        if breakCount >= 10
             cFlag = true;
-%             break
+%           break;
         end
 
     end % While Loop    
