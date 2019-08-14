@@ -8,8 +8,8 @@ OutputSize = 1;
 Neurons = [InputSize 100 100 OutputSize];         % Neurons per layers (input, hidden, output)
 ActFuncType = 1;             % Activation Function: 1: Sigmoid. 2: Lineal TODO: add more functions
 DataSize = 20;
-lrate = 0.0001;
-NumEpochs = 10000;
+lrate = 0.00001;
+NumEpochs = 1000;
 
 if hLayers ~= length(Neurons) - 2
     disp('hLayers is different than neurons defined');
@@ -36,14 +36,16 @@ for epoch = 1:NumEpochs
         disp(['It is epoch ', num2str(epoch)]);
     end
     % Feedforward Stage
-    z_2 = inputs * W1;
-    a_2 = ActFunc(z_2, ActFuncType);
+%     z_2 = inputs * W1;
+%     a_2 = ActFunc(z_2, ActFuncType);
+% 
+%     z_3 = a_2 * W2;
+%     a_3 = ActFunc(z_3, ActFuncType);
+% 
+%     z_4 = a_3 * W3;
+%     y_hat = ActFunc(z_4, 2);
 
-    z_3 = a_2 * W2;
-    a_3 = ActFunc(z_3, ActFuncType);
-
-    z_4 = a_3 * W3;
-    y_hat = ActFunc(z_4, 2);
+    [y_hat, z_2, a_2, z_3, a_3, z_4] = Feedforward(inputs, W1, W2, W3, ActFuncType);
 
     % Cost Function Calculation
     J = CostFunction(outputs, y_hat);
@@ -51,13 +53,14 @@ for epoch = 1:NumEpochs
 
     % Backpropagation Stage
     %   Gradient Calculation
-    delta4 =  -(outputs - y_hat).* ActFuncPrime(z_4, 2);
-    dJdW3 = a_3'*delta4;
-    delta3 = (delta4 * W3').* ActFuncPrime(z_3, ActFuncType);
-    dJdW2 = a_2'*delta3;
-    delta2 = (delta3 * W2').* ActFuncPrime(z_2, ActFuncType);
-    dJdW1 = inputs'*delta2;
-
+    
+%     delta4 =  -(outputs - y_hat).* ActFuncPrime(z_4, 2);
+%     dJdW3 = a_3'*delta4;
+%     delta3 = (delta4 * W3').* ActFuncPrime(z_3, ActFuncType);
+%     dJdW2 = a_2'*delta3;
+%     delta2 = (delta3 * W2').* ActFuncPrime(z_2, ActFuncType);
+%     dJdW1 = inputs'*delta2;
+    [dJdW3, dJdW2, dJdW1] = Backpropagation(inputs, outputs, y_hat, z_4, a_3,  z_3, a_2, z_2, W3, W2, ActFuncType);
     %   Updating Weights
     W1 = W1 - lrate * dJdW1;
     W2 = W2 - lrate * dJdW2;
@@ -66,7 +69,7 @@ end
 
 f = figure(1);
 plot(CostHistory(10:end));
-
+    
     z_2 = linspace(-6,6,40)' * W1;
     a_2 = ActFunc(z_2, ActFuncType);
 
@@ -75,28 +78,43 @@ plot(CostHistory(10:end));
 
     z_4 = a_3 * W3;
     y = ActFunc(z_4, 2);
+    
+function [y_hat, z_2, a_2, z_3, a_3, z_4] = Feedforward(inputs, W1, W2, W3, ActFuncType)
+    ActFunc = @(z, ActFuncType) (ActFuncType == 1) * 1./(1+exp(-z)) + (ActFuncType == 2) * z;
 
-function a = ActFunc(z, ActFuncType)
-    a = 0;
-    if ActFuncType == 1
-        a = 1./(1+exp(-z));
-    end
-    if ActFuncType == 2
-       a = z; 
-    end
+    z_2 = inputs * W1;
+    a_2 = ActFunc(z_2, ActFuncType);
+
+    z_3 = a_2 * W2;
+    a_3 = ActFunc(z_3, ActFuncType);
+
+    z_4 = a_3 * W3;
+    y_hat = ActFunc(z_4, 2);
 end
+
+function [dJdW3, dJdW2, dJdW1] = Backpropagation(inputs, outputs, y_hat, z_4, a_3,  z_3, a_2, z_2, W3, W2, ActFuncType)
+    ActFunc = @(z, ActFuncType) (ActFuncType == 1) * 1./(1+exp(-z)) + (ActFuncType == 2) * z;
+    ActFuncPrime = @(z, ActFuncType) (ActFuncType == 1) * ActFunc(z, ActFuncType) .* (1 - ActFunc(z, ActFuncType)) + (ActFuncType == 2) * ones(size(z));
+    delta4 =  -(outputs - y_hat).* ActFuncPrime(z_4, 2);
+    dJdW3 = a_3'*delta4;
+    delta3 = (delta4 * W3').* ActFuncPrime(z_3, ActFuncType);
+    dJdW2 = a_2'*delta3;
+    delta2 = (delta3 * W2').* ActFuncPrime(z_2, ActFuncType);
+    dJdW1 = inputs'*delta2;
+end
+
 
 function J = CostFunction(output, y_hat)
     % Function performs MSE
     J = 0.5*(output - y_hat)'*(output - y_hat);
 end
 
-function a_prime = ActFuncPrime(z, ActFuncType)
-    a_prime = 0;
-    if ActFuncType == 1
-        a_prime = ActFunc(z, ActFuncType) .* (1 - ActFunc(z, ActFuncType));
-    end
-    if ActFuncType == 2
-        a_prime = ones(size(z));
-    end
-end
+% function a_prime = ActFuncPrime(z, ActFuncType)
+%     a_prime = 0;
+%     if ActFuncType == 1
+%         a_prime = ActFunc(z, ActFuncType) .* (1 - ActFunc(z, ActFuncType));
+%     end
+%     if ActFuncType == 2
+%         a_prime = ones(size(z));
+%     end
+% end

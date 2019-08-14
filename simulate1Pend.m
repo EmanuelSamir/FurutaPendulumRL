@@ -1,4 +1,4 @@
-function simulate1Pend(parameters, angleStates)
+function simulate1Pend(parameters, angleStates, dT)
 %UNTITLED Summary of this function goes here
 %   Detailed explanation goes here
 
@@ -27,7 +27,7 @@ for i = 1:size(angleStates,1)
     % Move bar
     set(bar,'XData',[ 0 sin(angleStates(i,1)) ]);
     set(bar,'YData',[ 0 -cos(angleStates(i,1)) ]);
-    pause(0.1);   
+    pause(dT);   
 end
 
 end
