@@ -13,8 +13,8 @@ angleRange = 0.05;           % Switch to second controller when q reaches the ba
 rateRange = 0.1;          % Switch to second controller when qd reaches the ball of radius rateRange
 
 % -------- Q-learning -------- %
-maxep = 1000;           % Set max number of episodes
-tSteps = 2000;           % Set max number of iterations because there are undefined states
+maxep = 500;           % Set max number of episodes
+tSteps = 1600;           % Set max number of iterations because there are undefined states
 gamma = 0.999;           % Discount rate
 Rfunc = @(q, qdot) -((pi-abs(q)).^1 + 0.2*(abs(qdot).^2));  % Reward function
 prob = 0.8;             % Starting probability
@@ -30,7 +30,7 @@ InputSize = 2;                  % Input size
 OutputSize = length(actions);                 % Output size
 Neurons = [InputSize 32 128 OutputSize];         % Neurons per layers (input, hidden1, hidden2, output)
 ActFuncType = 1;                % Activation Function: 1: Sigmoid. 2: Lineal. TODO: add more functions
-lrate = 0.00001;                 % Learning rate for NN
+lrate = 0.0000001;                 % Learning rate for NN
 
 % Gaussian weight initialization
 W1 = randn(Neurons(1),Neurons(2));  % Weight for input to layer 1

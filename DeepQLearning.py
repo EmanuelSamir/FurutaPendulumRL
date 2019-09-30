@@ -135,7 +135,7 @@ class Agent:
 		self.Qvalues = []
 		self.states = []
 
-	def updatePolicy(self, states, Qexpected, epochs = 10, batch_size = 10):
+	def updatePolicy(self, states, Qexpected, epochs = 3, batch_size = 5):
 		history = self.Qfuntion.model.fit(states, Qexpected, epochs = epochs, batch_size = batch_size, verbose = 0)
 		self.NNhistory.append(history)
 		J = costFunction(Qexpected, np.squeeze(self.Qvalues))	
